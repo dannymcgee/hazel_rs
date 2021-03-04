@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+pub mod log;
+
 pub trait App {
 	fn run(&mut self, delta_time: f64);
 }
@@ -20,6 +22,8 @@ where
 	}
 
 	fn run(&mut self) {
+		log::core_info("Bootstrapping application");
+
 		loop {
 			let now = Instant::now();
 			let delta_time = (now - self.last_tick).as_nanos() as f64 / 1_000_000.0;
