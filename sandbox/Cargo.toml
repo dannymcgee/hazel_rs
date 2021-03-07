@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 hazel = { path = "../hazel" }
+crossbeam = "^0.8"

@@ -1,18 +1,21 @@
-use hazel::{log, App};
+use crossbeam::channel::Sender;
+use hazel::{events::Event, log, App};
 
-struct SandboxApp;
+struct SandboxApp {
+	#[allow(dead_code)]
+	event_emitter: Sender<Event>,
+}
 
 impl App for SandboxApp {
-	fn run(&mut self, _delta_time: f64) {
-		log::debug("Hmmm, what seems to be the problem here...");
+	fn new(event_emitter: Sender<Event>) -> Self {
+		Self { event_emitter }
+	}
+
+	fn tick(&mut self) {
 		log::info("Tick!");
-		log::okay("Success!");
-		log::warn("Danger, Will Robinson!");
-		log::error("Error! Error!");
-		log::fatal("X{");
 	}
 }
 
 fn main() {
-	hazel::bootstrap(&mut SandboxApp);
+	hazel::bootstrap::<SandboxApp>();
 }
