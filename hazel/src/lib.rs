@@ -1,68 +1,76 @@
-use std::{thread, time::Duration};
+use std::{process, thread};
 
-use crossbeam::channel::{self as chan, Sender};
-use events::{AppEvent, Event, Key, KeyboardEvent, MouseButton, MouseEvent, WindowEvent};
+use events::{
+	AppEvent, Event, Key, KeyboardEvent, Modifiers, MouseButton, MouseEvent, WindowEvent,
+};
 
 pub mod events;
 pub mod log;
 
+#[macro_use]
+extern crate bitflags;
+
+#[cfg_attr(target_family = "windows", path = "platform/windows/window.rs")]
+pub mod window;
+use window::Window;
+
 pub trait App {
-	fn new(event_emitter: Sender<Event>) -> Self;
+	fn new(tx: events::Sender<Event>) -> Self;
 	fn tick(&mut self) {}
 	fn on_update(&mut self) {}
 	fn on_render(&mut self) {}
-	fn on_window_resize(&mut self, _w: u32, _h: u32) {}
-	fn on_window_move(&mut self, _dx: i32, _dy: i32) {}
-	fn on_keydown(&mut self, _key: Key) {}
-	fn on_keyup(&mut self, _key: Key, _repeat_count: u32) {}
-	fn on_mousedown(&mut self, _button: MouseButton) {}
-	fn on_mouseup(&mut self, _button: MouseButton) {}
-	fn on_mousemove(&mut self, _dx: i32, _dy: i32) {}
-	fn on_scroll(&mut self, _dx: i32, _dy: i32) {}
+	fn on_window_resize(&mut self, _w: i32, _h: i32) {}
+	fn on_window_move(&mut self, _x: i32, _y: i32) {}
+	fn on_window_close(&mut self) {
+		process::exit(0);
+	}
+	fn on_keydown(&mut self, _key: Key, _modifiers: Modifiers, _repeat_count: u32) {}
+	fn on_keyup(&mut self, _key: Key, _modifiers: Modifiers) {}
+	fn on_mousedown(&mut self, _button: MouseButton, _modifiers: Modifiers) {}
+	fn on_mouseup(&mut self, _button: MouseButton, _modifiers: Modifiers) {}
+	fn on_mousemove(&mut self, _x: u32, _y: u32) {}
+	fn on_scroll(&mut self, _dx: f64, _dy: f64) {}
 }
 
 pub fn bootstrap<T: 'static + App + Send>() {
-	let (tx, rx) = chan::unbounded();
+	let (tx, rx) = crossbeam::channel::bounded(0);
 
-	let app_tx = tx.clone();
-	let mut app = T::new(app_tx);
+	let mut app = T::new(tx.clone());
+	let mut window = Window::new(tx, "Hello, world!", 1440, 900, true);
 
-	loop {
+	// Event dispatcher
+	thread::spawn(move || loop {
 		use AppEvent::*;
 		use Event::*;
 		use KeyboardEvent::*;
 		use MouseEvent::{Move as MouseMove, *};
 		use WindowEvent::{Move as WindowMove, *};
 
-		if let Ok(evt) = rx.try_recv() {
+		if let Ok(evt) = rx.recv() {
 			match evt {
-				App(evt) => match evt {
-					Tick => app.tick(),
-					Update => app.on_update(),
-					Render => app.on_render(),
-				},
+				App(Tick) => app.tick(),
 				Window(evt) => match evt {
 					Resize(w, h) => app.on_window_resize(w, h),
-					WindowMove(dx, dy) => app.on_window_move(dx, dy),
+					WindowMove(x, y) => app.on_window_move(x, y),
+					Close => app.on_window_close(),
 					_ => {}
 				},
 				Keyboard(evt) => match evt {
-					Press(key) => app.on_keydown(key),
-					Release(key, repeat_count) => app.on_keyup(key, repeat_count),
+					Press(key, mods, repeat) => app.on_keydown(key, mods, repeat),
+					Release(key, mods) => app.on_keyup(key, mods),
 				},
 				Mouse(evt) => match evt {
-					ButtonPress(button) => app.on_mousedown(button),
-					ButtonRelease(button) => app.on_mouseup(button),
-					MouseMove(dx, dy) => app.on_mousemove(dx, dy),
+					ButtonPress(button, mods) => app.on_mousedown(button, mods),
+					ButtonRelease(button, mods) => app.on_mouseup(button, mods),
+					MouseMove(x, y) => app.on_mousemove(x, y),
 					Scroll(dx, dy) => app.on_scroll(dx, dy),
 				},
-			}
+				_ => {}
+			};
 		}
+	});
 
-		if tx.send(App(AppEvent::Tick)).is_ok() {
-			thread::sleep(Duration::from_nanos(16_666_667))
-		} else {
-			break;
-		}
+	loop {
+		window.tick();
 	}
 }
